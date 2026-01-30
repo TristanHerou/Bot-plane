@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     )
     github_webhook_secret: str = Field(..., description="GitHub webhook secret for verification")
 
+    # Plane Webhook Configuration
+    plane_webhook_secret: str | None = Field(
+        default=None, description="Plane webhook secret for verification (strongly recommended)"
+    )
+
     # Status Mapping
     status_mapping_file: Path | None = Field(
         default=None, description="Path to status mapping YAML file"

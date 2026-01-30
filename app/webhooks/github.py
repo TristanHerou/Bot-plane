@@ -48,15 +48,21 @@ async def github_webhook(
     delivery_id = x_github_delivery or "unknown"
     logger.info(f"Received GitHub webhook: event={x_github_event}, delivery={delivery_id}")
 
-    # Verify webhook signature
-    if x_hub_signature_256:
-        body = await request.body()
-        if not github_service.verify_webhook_signature(body, x_hub_signature_256):
-            logger.warning(f"Invalid webhook signature for delivery {delivery_id}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid webhook signature",
-            )
+    # Verify webhook signature (MANDATORY)
+    body = await request.body()
+    if not x_hub_signature_256:
+        logger.warning(f"Missing webhook signature for delivery {delivery_id}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing X-Hub-Signature-256 header",
+        )
+
+    if not github_service.verify_webhook_signature(body, x_hub_signature_256):
+        logger.warning(f"Invalid webhook signature for delivery {delivery_id}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook signature",
+        )
 
     # Only process issue events
     if x_github_event != "issues":
@@ -66,10 +72,8 @@ async def github_webhook(
             "reason": f"Event type '{x_github_event}' not handled",
         }
 
-    # Parse the payload
+    # Parse the payload (body already read for signature verification)
     try:
-        body = await request.body()
-        # Re-parse as JSON since we already read the body
         import json
 
         payload = json.loads(body)

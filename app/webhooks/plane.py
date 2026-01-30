@@ -1,16 +1,39 @@
 """Plane webhook endpoint for receiving work item events."""
 
+import hashlib
+import hmac
 import logging
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
+from app.config import get_settings
 from app.models.plane import PlaneWebhookEvent
 from app.services.sync_service import SyncOutcome, SyncResult, SyncService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+
+def verify_plane_signature(body: bytes, signature: str, secret: str) -> bool:
+    """
+    Verify Plane webhook signature.
+
+    Plane uses HMAC-SHA256 for webhook signature verification.
+    The signature header format is: sha256=<hex_digest>
+    """
+    if not signature.startswith("sha256="):
+        return False
+
+    expected_signature = signature[7:]  # Remove "sha256=" prefix
+    computed_signature = hmac.new(
+        key=secret.encode("utf-8"),
+        msg=body,
+        digestmod=hashlib.sha256,
+    ).hexdigest()
+
+    return hmac.compare_digest(computed_signature, expected_signature)
 
 
 async def get_sync_service() -> SyncService:
@@ -22,6 +45,7 @@ async def get_sync_service() -> SyncService:
 @router.post("/plane", status_code=status.HTTP_200_OK)
 async def plane_webhook(
     request: Request,
+    x_plane_signature: Annotated[str | None, Header()] = None,
     sync_service: SyncService = Depends(get_sync_service),
 ) -> dict[str, str | dict[str, Any] | None]:
     """
@@ -29,6 +53,9 @@ async def plane_webhook(
 
     This endpoint receives webhook events from Plane when work item
     statuses are changed, and syncs the status to GitHub.
+
+    Headers:
+        X-Plane-Signature: HMAC signature for payload verification (sha256=<hex>)
 
     Plane webhook payload structure:
     {
@@ -44,9 +71,35 @@ async def plane_webhook(
         }
     }
     """
-    # Parse the raw payload first for logging
+    settings = get_settings()
+    body = await request.body()
+
+    # Verify webhook signature if secret is configured (STRONGLY RECOMMENDED)
+    if settings.plane_webhook_secret:
+        if not x_plane_signature:
+            logger.warning("Missing Plane webhook signature")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing X-Plane-Signature header",
+            )
+
+        if not verify_plane_signature(body, x_plane_signature, settings.plane_webhook_secret):
+            logger.warning("Invalid Plane webhook signature")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid webhook signature",
+            )
+    else:
+        logger.warning(
+            "PLANE_WEBHOOK_SECRET not configured - webhook signature verification DISABLED. "
+            "This is a security risk!"
+        )
+
+    # Parse the raw payload
     try:
-        payload = await request.json()
+        import json
+
+        payload = json.loads(body)
     except Exception as e:
         logger.error(f"Failed to parse Plane webhook JSON: {e}")
         raise HTTPException(

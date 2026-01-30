@@ -1,0 +1,29 @@
+# Status Mapping Configuration
+# This file defines how statuses are mapped between GitHub and Plane
+
+# GitHub action to Plane status name mapping
+# When a GitHub issue is closed or reopened, update the Plane work item to this status
+github_to_plane:
+  closed: "Done"       # GitHub issue closed -> Plane "Done"
+  reopened: "Backlog"  # GitHub issue reopened -> Plane "Backlog"
+
+# Plane status name to GitHub state mapping
+# When a Plane work item status changes, update the GitHub issue to this state
+# GitHub states: "open" or "closed"
+plane_to_github:
+  Done: "closed"
+  Cancelled: "closed"
+  Backlog: "open"
+  Todo: "open"
+  "In Progress": "open"
+
+# Plane state IDs (optional - will be auto-populated on startup)
+# If you know your Plane state UUIDs, you can add them here to skip the lookup
+# Format: "Status Name": "uuid"
+plane_state_ids: {}
+  # Example:
+  # Backlog: "00000000-0000-0000-0000-000000000001"
+  # Todo: "00000000-0000-0000-0000-000000000002"
+  # "In Progress": "00000000-0000-0000-0000-000000000003"
+  # Done: "00000000-0000-0000-0000-000000000004"
+  # Cancelled: "00000000-0000-0000-0000-000000000005"

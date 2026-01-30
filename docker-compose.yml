@@ -1,0 +1,69 @@
+# Docker Compose for Plane-GitHub Sync Bot
+# Development and production configurations
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      # Plane Configuration
+      - PLANE_API_KEY=${PLANE_API_KEY}
+      - PLANE_WORKSPACE_SLUG=${PLANE_WORKSPACE_SLUG}
+      - PLANE_PROJECT_ID=${PLANE_PROJECT_ID}
+      - PLANE_BASE_URL=${PLANE_BASE_URL:-https://api.plane.so}
+
+      # GitHub App Configuration
+      - GITHUB_APP_ID=${GITHUB_APP_ID}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+      # Use base64-encoded key for containers (recommended)
+      - GITHUB_APP_PRIVATE_KEY_BASE64=${GITHUB_APP_PRIVATE_KEY_BASE64}
+      # Or mount the key file (see volumes below)
+      # - GITHUB_APP_PRIVATE_KEY_PATH=/app/secrets/github-private-key.pem
+
+      # Bot Configuration
+      - PORT=8000
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DEBUG=${DEBUG:-false}
+
+      # Status Mapping
+      - STATUS_MAPPING_FILE=/app/config/status-mapping.yml
+    volumes:
+      # Mount custom status mapping (optional)
+      - ./config/status-mapping.yml:/app/config/status-mapping.yml:ro
+      # Mount GitHub private key (if not using base64)
+      # - ./secrets/github-private-key.pem:/app/secrets/github-private-key.pem:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# For development with hot reload
+  bot-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - PLANE_API_KEY=${PLANE_API_KEY}
+      - PLANE_WORKSPACE_SLUG=${PLANE_WORKSPACE_SLUG}
+      - PLANE_PROJECT_ID=${PLANE_PROJECT_ID}
+      - GITHUB_APP_ID=${GITHUB_APP_ID}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+      - GITHUB_APP_PRIVATE_KEY_BASE64=${GITHUB_APP_PRIVATE_KEY_BASE64}
+      - PORT=8000
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+      - STATUS_MAPPING_FILE=/app/config/status-mapping.yml
+    volumes:
+      - ./app:/app/app:ro
+      - ./config:/app/config:ro
+    command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    profiles:
+      - dev

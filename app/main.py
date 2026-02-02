@@ -143,7 +143,7 @@ def run() -> None:
         "app.main:app",
         host="0.0.0.0",
         port=settings.port,
-        reload=settings.debug,
+        reload=False,
         log_level=settings.log_level.lower(),
     )
 

@@ -103,10 +103,6 @@ class Settings(BaseSettings):
     # Bot Configuration
     port: int = Field(default=8000, description="Port to run the bot on")
     log_level: str = Field(default="INFO", description="Logging level")
-    debug: bool = Field(
-        default=False,
-        description="Enable debug mode (DEBUG=1 or 0); when 1, log level becomes DEBUG",
-    )
     webhook_base_url: str | None = Field(
         default=None, description="Base URL where this bot is hosted"
     )
@@ -133,16 +129,6 @@ class Settings(BaseSettings):
         if len(v) >= 2 and v[0] == v[-1] == '"':
             v = v[1:-1].replace('""', '"')
         return v
-
-    @field_validator("debug", mode="before")
-    @classmethod
-    def validate_debug(cls, v: str | bool) -> bool:
-        """Accept DEBUG=1/0 or true/false from env."""
-        if isinstance(v, bool):
-            return v
-        if isinstance(v, str):
-            return v.strip().lower() in ("1", "true", "yes", "on")
-        return False
 
     @field_validator("log_level")
     @classmethod
@@ -186,10 +172,12 @@ def get_settings() -> Settings:
 
 
 def setup_logging(settings: Settings) -> None:
-    """Configure logging based on settings. DEBUG=1 forces log level to DEBUG."""
+    """Configure logging based on settings."""
     log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    level = logging.DEBUG if settings.debug else getattr(logging, settings.log_level)
-    logging.basicConfig(level=level, format=log_format)
+    logging.basicConfig(
+        level=getattr(logging, settings.log_level),
+        format=log_format,
+    )
 
     # Reduce noise from httpx
     logging.getLogger("httpx").setLevel(logging.WARNING)

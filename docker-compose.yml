@@ -42,8 +42,7 @@ services:
 
       # Bot Configuration
       - PORT=8000
-      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
-      - DEBUG=${DEBUG:-0}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
 
       # Status Mapping
       - STATUS_MAPPING_FILE=/app/config/status-mapping.yml
@@ -76,7 +75,6 @@ services:
       - GITHUB_APP_PRIVATE_KEY_BASE64=${GITHUB_APP_PRIVATE_KEY_BASE64}
       - PORT=8000
       - LOG_LEVEL=DEBUG
-      - DEBUG=true
       - STATUS_MAPPING_FILE=/app/config/status-mapping.yml
     volumes:
       - ./app:/app/app:ro

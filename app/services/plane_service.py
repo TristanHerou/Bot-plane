@@ -177,10 +177,14 @@ class PlaneService:
             self._work_item_endpoint(work_item_id),
             json_data={"state": state_id},
         )
-        if isinstance(data, dict):
-            logger.info(f"Updated Plane work item {work_item_id} state to {state_id}")
-            return PlaneWorkItem(**data)
-        raise PlaneAPIError("Unexpected response format")
+        logger.info(f"✅ Updated Plane work item {work_item_id} state to {state_id}")
+        if isinstance(data, dict) and data and "id" in data:
+            try:
+                return PlaneWorkItem(**data)
+            except Exception:
+                pass
+        # Plane API may return empty body on PATCH; re-fetch the work item
+        return await self.get_work_item(work_item_id)
 
     async def get_project_states(self) -> list[PlaneState]:
         """

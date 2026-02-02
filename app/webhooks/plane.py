@@ -158,6 +158,17 @@ async def plane_webhook(
 
     event_type = payload.get("event", "unknown")
     logger.info(f"Received Plane webhook: event={event_type}")
+    logger.debug(
+        "Plane webhook body: %s",
+        json.dumps(
+            {
+                k: v
+                for k, v in payload.items()
+                if k in ("event", "action", "webhook_id", "workspace_id", "project_id", "data")
+            },
+            default=str,
+        ),
+    )
 
     # Only process work item events
     if not event_type.startswith("work_item."):

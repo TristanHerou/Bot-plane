@@ -191,21 +191,32 @@ class PlaneService:
 
         endpoint = (
             f"/api/v1/workspaces/{self.workspace_slug}"
-            f"/projects/{self.project_id}/states"
+            f"/projects/{self.project_id}/states/"
         )
         data = await self._make_request("GET", endpoint)
 
         states: list[PlaneState] = []
         if isinstance(data, list):
             states = [PlaneState(**s) for s in data]
-        elif isinstance(data, dict) and "results" in data:
-            states = [PlaneState(**s) for s in data["results"]]
+        elif isinstance(data, dict):
+            if "results" in data:
+                states = [PlaneState(**s) for s in data["results"]]
+            elif "data" in data and isinstance(data["data"], list):
+                states = [PlaneState(**s) for s in data["data"]]
 
         # Cache the states
         self._states_cache = {s.id: s for s in states}
         self._states_by_name = {s.name: s for s in states}
 
-        logger.info(f"Loaded {len(states)} project states: {[s.name for s in states]}")
+        if not states:
+            logger.warning(
+                "Loaded 0 project states. Check PLANE_WORKSPACE_SLUG, PLANE_PROJECT_ID "
+                "and PLANE_API_KEY (workspace: %s, project: %s)",
+                self.workspace_slug,
+                self.project_id,
+            )
+        else:
+            logger.info(f"Loaded {len(states)} project states: {[s.name for s in states]}")
         return states
 
     async def get_state_by_name(self, name: str) -> PlaneState | None:
@@ -282,6 +293,13 @@ class PlaneService:
         """
         if self._states_by_name is None:
             logger.warning("States not loaded, cannot update mapping")
+            return
+
+        if not self._states_by_name:
+            logger.warning(
+                "No states in project; mapping will use names only. "
+                "Create states in Plane (e.g. Backlog, Todo, In Progress, Done) or check project/workspace."
+            )
             return
 
         for name in mapping.plane_to_github:

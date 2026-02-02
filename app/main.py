@@ -76,7 +76,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await _sync_service.initialize()
     logger.info("Sync service initialized successfully")
 
-
     yield
 
     # Cleanup

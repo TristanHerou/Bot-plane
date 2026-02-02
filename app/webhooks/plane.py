@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import json
 import logging
 from typing import Annotated, Any
 
@@ -20,20 +21,37 @@ def verify_plane_signature(body: bytes, signature: str, secret: str) -> bool:
     """
     Verify Plane webhook signature.
 
-    Plane uses HMAC-SHA256 for webhook signature verification.
-    The signature header format is: sha256=<hex_digest>
+    Plane uses HMAC-SHA256; the header is the hex digest (with or without "sha256=").
+    Doc: https://developers.plane.so/dev-tools/intro-webhooks
     """
-    if not signature.startswith("sha256="):
+    if not signature:
+        return False
+    # Plane sends raw hex; accept both "sha256=hex" and "hex"
+    expected_hex = signature[7:] if signature.startswith("sha256=") else signature.strip()
+    if not expected_hex:
         return False
 
-    expected_signature = signature[7:]  # Remove "sha256=" prefix
-    computed_signature = hmac.new(
-        key=secret.encode("utf-8"),
+    secret_bytes = secret.encode("utf-8")
+    # Verify against raw body (what we received)
+    computed = hmac.new(
+        key=secret_bytes,
         msg=body,
         digestmod=hashlib.sha256,
     ).hexdigest()
-
-    return hmac.compare_digest(computed_signature, expected_signature)
+    if hmac.compare_digest(computed, expected_hex):
+        return True
+    # If behind a proxy, body may differ; try verifying with re-serialized JSON (Plane doc)
+    try:
+        payload = json.loads(body.decode("utf-8"))
+        canonical = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        computed_canonical = hmac.new(
+            key=secret_bytes,
+            msg=canonical,
+            digestmod=hashlib.sha256,
+        ).hexdigest()
+        return hmac.compare_digest(computed_canonical, expected_hex)
+    except Exception:
+        return False
 
 
 async def get_sync_service() -> SyncService:
@@ -97,8 +115,6 @@ async def plane_webhook(
 
     # Parse the raw payload
     try:
-        import json
-
         payload = json.loads(body)
     except Exception as e:
         logger.error(f"Failed to parse Plane webhook JSON: {e}")

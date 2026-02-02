@@ -137,11 +137,17 @@ class PlaneService:
         return f"{base}/{suffix}" if suffix else base
 
     async def get_work_item(self, work_item_id: str) -> PlaneWorkItem:
-        """Get a work item by ID."""
-        data = await self._make_request("GET", self._work_item_endpoint(work_item_id))
-        if isinstance(data, dict):
+        """Get a work item by ID (Plane API expects trailing slash)."""
+        endpoint = self._work_item_endpoint(work_item_id) + "/"
+        data = await self._make_request("GET", endpoint)
+        if not isinstance(data, dict) or not data or "id" not in data:
+            raise PlaneAPIError(
+                "Empty or invalid response for work item (GET may need trailing slash or API returned empty)"
+            )
+        try:
             return PlaneWorkItem(**data)
-        raise PlaneAPIError("Unexpected response format")
+        except Exception as e:
+            raise PlaneAPIError(f"Invalid work item data: {e}") from e
 
     async def get_work_item_links(self, work_item_id: str) -> list[PlaneLink]:
         """
@@ -161,7 +167,7 @@ class PlaneService:
 
     async def update_work_item_state(
         self, work_item_id: str, state_id: str
-    ) -> PlaneWorkItem:
+    ) -> PlaneWorkItem | None:
         """
         Update the state of a work item.
 
@@ -170,21 +176,29 @@ class PlaneService:
             state_id: The new state UUID
 
         Returns:
-            Updated work item
+            Updated work item, or None if PATCH succeeded but re-fetch returned empty.
         """
+        endpoint = self._work_item_endpoint(work_item_id) + "/"
         data = await self._make_request(
             "PATCH",
-            self._work_item_endpoint(work_item_id),
+            endpoint,
             json_data={"state": state_id},
         )
-        logger.info(f"✅ Updated Plane work item {work_item_id} state to {state_id}")
+        logger.info(f"Updated Plane work item {work_item_id} state to {state_id}")
         if isinstance(data, dict) and data and "id" in data:
             try:
                 return PlaneWorkItem(**data)
             except Exception:
                 pass
         # Plane API may return empty body on PATCH; re-fetch the work item
-        return await self.get_work_item(work_item_id)
+        try:
+            return await self.get_work_item(work_item_id)
+        except PlaneAPIError:
+            logger.warning(
+                "Plane PATCH succeeded but re-fetch of work item %s returned empty; state was updated",
+                work_item_id,
+            )
+            return None
 
     async def get_project_states(self) -> list[PlaneState]:
         """

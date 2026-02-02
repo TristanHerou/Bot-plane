@@ -123,8 +123,13 @@ class Settings(BaseSettings):
     @field_validator("plane_webhook_secret")
     @classmethod
     def validate_plane_webhook_secret(cls, v: str | None) -> str | None:
-        """Strip whitespace (trailing newline in .env is common)."""
-        return v.strip() if v and isinstance(v, str) else v
+        """Strip whitespace, BOM, and CSV-style quotes (from Plane CSV download)."""
+        if not v or not isinstance(v, str):
+            return v
+        v = v.strip().strip("\ufeff")  # BOM
+        if len(v) >= 2 and v[0] == v[-1] == '"':
+            v = v[1:-1].replace('""', '"')
+        return v
 
     @field_validator("log_level")
     @classmethod

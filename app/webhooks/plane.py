@@ -43,19 +43,38 @@ def verify_plane_signature(body: bytes, signature: str, secret: str) -> bool:
         digestmod=hashlib.sha256,
     ).hexdigest()
     if hmac.compare_digest(computed, expected_hex):
+        logger.debug("Plane webhook signature verified (raw body, len=%d)", len(body))
         return True
+    logger.debug(
+        "Plane signature mismatch on raw body (len=%d), trying canonical JSON variants",
+        len(body),
+    )
     # If behind a proxy, body may differ; try verifying with re-serialized JSON (Plane doc)
     try:
         payload = json.loads(body.decode("utf-8"))
-        canonical = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        computed_canonical = hmac.new(
-            key=secret_bytes,
-            msg=canonical,
-            digestmod=hashlib.sha256,
-        ).hexdigest()
-        return hmac.compare_digest(computed_canonical, expected_hex)
-    except Exception:
-        return False
+        for separators, sort_keys in [
+            ((",", ":"), False),
+            ((",", ":"), True),
+            (None, True),  # default separators (with spaces)
+        ]:
+            kwargs = {"sort_keys": sort_keys}
+            if separators is not None:
+                kwargs["separators"] = separators
+            canonical = json.dumps(payload, **kwargs).encode("utf-8")
+            computed_canonical = hmac.new(
+                key=secret_bytes,
+                msg=canonical,
+                digestmod=hashlib.sha256,
+            ).hexdigest()
+            if hmac.compare_digest(computed_canonical, expected_hex):
+                logger.debug(
+                    "Plane webhook signature verified (canonical JSON, sort_keys=%s)",
+                    sort_keys,
+                )
+                return True
+    except Exception as e:
+        logger.debug("Plane canonical verification failed: %s", e)
+    return False
 
 
 async def get_sync_service() -> SyncService:
@@ -98,14 +117,20 @@ async def plane_webhook(
 
     # Verify webhook signature if secret is configured (STRONGLY RECOMMENDED)
     if settings.plane_webhook_secret:
-        if not x_plane_signature:
+        # Read signature from headers (proxy may alter casing)
+        signature = (
+            x_plane_signature
+            or request.headers.get("x-plane-signature")
+            or request.headers.get("X-Plane-Signature")
+        )
+        if not signature:
             logger.warning("Missing Plane webhook signature")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Missing X-Plane-Signature header",
             )
 
-        if not verify_plane_signature(body, x_plane_signature, settings.plane_webhook_secret):
+        if not verify_plane_signature(body, signature, settings.plane_webhook_secret):
             logger.warning(
                 "Invalid Plane webhook signature (body_len=%d). "
                 "Check PLANE_WEBHOOK_SECRET matches the secret in Plane webhook settings.",

@@ -14,7 +14,7 @@ RUN groupadd --gid 1000 botuser && \
 WORKDIR /app
 
 # Install dependencies
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 RUN pip install --no-cache-dir .
 
 # Copy application code

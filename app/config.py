@@ -120,6 +120,12 @@ class Settings(BaseSettings):
             raise ValueError("Plane API key must start with 'plane_api_'")
         return v
 
+    @field_validator("plane_webhook_secret")
+    @classmethod
+    def validate_plane_webhook_secret(cls, v: str | None) -> str | None:
+        """Strip whitespace (trailing newline in .env is common)."""
+        return v.strip() if v and isinstance(v, str) else v
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, v: str) -> str:

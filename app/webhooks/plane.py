@@ -30,6 +30,10 @@ def verify_plane_signature(body: bytes, signature: str, secret: str) -> bool:
     expected_hex = signature[7:] if signature.startswith("sha256=") else signature.strip()
     if not expected_hex:
         return False
+    # Strip secret (trailing newline in .env is common)
+    secret = (secret or "").strip()
+    if not secret:
+        return False
 
     secret_bytes = secret.encode("utf-8")
     # Verify against raw body (what we received)
@@ -102,7 +106,11 @@ async def plane_webhook(
             )
 
         if not verify_plane_signature(body, x_plane_signature, settings.plane_webhook_secret):
-            logger.warning("Invalid Plane webhook signature")
+            logger.warning(
+                "Invalid Plane webhook signature (body_len=%d). "
+                "Check PLANE_WEBHOOK_SECRET matches the secret in Plane webhook settings.",
+                len(body),
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid webhook signature",

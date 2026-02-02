@@ -110,7 +110,20 @@ class PlaneService:
             if response.status_code == 204:
                 return {}
 
-            return response.json()
+            text = response.text
+            if not text or not text.strip():
+                return {}
+
+            try:
+                return response.json()
+            except ValueError as e:
+                logger.error(
+                    "Plane API returned non-JSON: %s %s - body: %s",
+                    method,
+                    endpoint,
+                    text[:200] if len(text) > 200 else text,
+                )
+                raise PlaneAPIError(f"Invalid JSON response: {e}") from e
 
     def _work_item_endpoint(self, work_item_id: str, suffix: str = "") -> str:
         """Build the endpoint URL for a work item."""

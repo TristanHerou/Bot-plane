@@ -170,8 +170,8 @@ async def plane_webhook(
         ),
     )
 
-    # Only process work item events
-    if not event_type.startswith("work_item."):
+    # Process work item / issue events (Plane sends "issue" or "work_item.*")
+    if event_type != "issue" and not event_type.startswith("work_item."):
         logger.debug(f"Ignoring event type: {event_type}")
         return {
             "status": "ignored",

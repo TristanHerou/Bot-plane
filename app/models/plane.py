@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 
 class GitHubIssueRef(BaseModel):
@@ -104,14 +104,14 @@ class PlaneWebhookData(BaseModel):
 
     id: str
     name: str | None = None
-    state: str | None = None  # State ID
+    state: str | None = None  # State ID (or normalized from state object)
     project: str | None = None
     workspace: str | None = None
 
     # Old values for comparison (available on updates)
     old_state: str | None = None
 
-    # State detail (Plane may send state name in webhook)
+    # State detail (Plane may send state as object {id, name, ...} in webhook)
     state_detail: PlaneState | None = None
 
     # Additional fields that might be present
@@ -119,6 +119,33 @@ class PlaneWebhookData(BaseModel):
     priority: str | None = None
 
     model_config = {"extra": "allow"}
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_state_from_object(cls, data: Any) -> Any:
+        """Plane sends state as object {id, name, ...}; normalize to state (id) + state_detail."""
+        if not isinstance(data, dict):
+            return data
+        state_val = data.get("state")
+        if state_val is None:
+            return data
+        if isinstance(state_val, dict) and "id" in state_val:
+            data = {**data, "state": str(state_val["id"])}
+            if "state_detail" not in data and "name" in state_val:
+                data["state_detail"] = state_val
+        return data
+
+    @field_validator("state", mode="before")
+    @classmethod
+    def state_to_str(cls, v: Any) -> str | None:
+        """Accept state as string (ID) or object {id, ...} (id already set by model_validator)."""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            return v
+        if isinstance(v, dict) and "id" in v:
+            return str(v["id"])
+        return None
 
 
 class PlaneWebhookEvent(BaseModel):
@@ -147,10 +174,12 @@ class PlaneWebhookEvent(BaseModel):
         """Check if this event represents a status change."""
         if self.action != "updated":
             return False
-        # Check if state field was modified
+        # Plane may send old_state and state (both IDs), or only state (object or ID)
         if self.data.old_state and self.data.state:
             return self.data.old_state != self.data.state
-        # Fallback: check activity for state changes
+        # Plane "issue" webhook often sends only state (no old_state); treat as status change
+        if self.data.state:
+            return True
         if self.activity:
             return "state" in self.activity
         return False

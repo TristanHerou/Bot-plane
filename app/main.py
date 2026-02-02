@@ -72,12 +72,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _sync_service = SyncService(_github_service, _plane_service, status_mapping)
 
     # Initialize sync service (loads Plane states)
-    try:
-        await _sync_service.initialize()
-        logger.info("Sync service initialized successfully")
-    except Exception as e:
-        logger.warning(f"Failed to initialize sync service: {e}")
-        logger.warning("The bot will attempt to load states on first request")
+
+    await _sync_service.initialize()
+    logger.info("Sync service initialized successfully")
+
 
     yield
 

@@ -30,6 +30,7 @@ services:
       - PLANE_WORKSPACE_SLUG=${PLANE_WORKSPACE_SLUG}
       - PLANE_PROJECT_ID=${PLANE_PROJECT_ID}
       - PLANE_BASE_URL=${PLANE_BASE_URL:-https://api.plane.so}
+      - PLANE_WEBHOOK_SECRET=${PLANE_WEBHOOK_SECRET}
 
       # GitHub App Configuration
       - GITHUB_APP_ID=${GITHUB_APP_ID}

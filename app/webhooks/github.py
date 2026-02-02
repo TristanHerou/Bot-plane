@@ -50,14 +50,22 @@ async def github_webhook(
 
     # Verify webhook signature (MANDATORY)
     body = await request.body()
-    if not x_hub_signature_256:
-        logger.warning(f"Missing webhook signature for delivery {delivery_id}")
+    # Read signature from headers (proxy/Traefik may alter header casing or injection)
+    signature = x_hub_signature_256 or request.headers.get("x-hub-signature-256") or request.headers.get("X-Hub-Signature-256")
+    if not signature:
+        # Log header names only (no values) to debug proxy stripping
+        header_names = [k for k in request.headers.keys()]
+        logger.warning(
+            "Missing webhook signature for delivery %s. Request headers: %s",
+            delivery_id,
+            header_names,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing X-Hub-Signature-256 header",
         )
 
-    if not github_service.verify_webhook_signature(body, x_hub_signature_256):
+    if not github_service.verify_webhook_signature(body, signature):
         logger.warning(f"Invalid webhook signature for delivery {delivery_id}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

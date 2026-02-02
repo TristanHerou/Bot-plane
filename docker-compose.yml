@@ -19,9 +19,9 @@ services:
       - GITHUB_APP_ID=${GITHUB_APP_ID}
       - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
       # Use base64-encoded key for containers (recommended)
-      - GITHUB_APP_PRIVATE_KEY_BASE64=${GITHUB_APP_PRIVATE_KEY_BASE64}
+      #- GITHUB_APP_PRIVATE_KEY_BASE64=${GITHUB_APP_PRIVATE_KEY_BASE64}
       # Or mount the key file (see volumes below)
-      # - GITHUB_APP_PRIVATE_KEY_PATH=/app/secrets/github-private-key.pem
+      - GITHUB_APP_PRIVATE_KEY_PATH=/app/secrets/github-private-key.pem
 
       # Bot Configuration
       - PORT=8000
@@ -34,7 +34,7 @@ services:
       # Mount custom status mapping (optional)
       - ./config/status-mapping.yml:/app/config/status-mapping.yml:ro
       # Mount GitHub private key (if not using base64)
-      # - ./secrets/github-private-key.pem:/app/secrets/github-private-key.pem:ro
+      - ./bot-plane.2026-02-01.private-key.pem:/app/secrets/github-private-key.pem:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]

@@ -193,7 +193,21 @@ class PlaneService:
             f"/api/v1/workspaces/{self.workspace_slug}"
             f"/projects/{self.project_id}/states/"
         )
-        data = await self._make_request("GET", endpoint)
+        try:
+            data = await self._make_request("GET", endpoint)
+        except PlaneAPIError as e:
+            if e.status_code == 403:
+                logger.warning(
+                    "Plane API 403 listing states: API key may lack permission. "
+                    "In Plane, ensure the API key has access to the project/workspace "
+                    "(workspace: %s, project: %s). Continuing with 0 states.",
+                    self.workspace_slug,
+                    self.project_id,
+                )
+                self._states_cache = {}
+                self._states_by_name = {}
+                return []
+            raise
 
         states: list[PlaneState] = []
         if isinstance(data, list):

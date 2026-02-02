@@ -90,4 +90,4 @@ services:
 networks:
   traefik:
     external: true
-    name: registry_traefik
+    name: notrelec-registry_traefik

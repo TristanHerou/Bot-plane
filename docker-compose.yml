@@ -50,7 +50,7 @@ services:
       # Mount custom status mapping (optional)
       - ./config/status-mapping.yml:/app/config/status-mapping.yml:ro
       # Mount GitHub private key (if not using base64)
-      - ./bot-plane.2026-02-01.private-key.pem:/app/secrets/github-private-key.pem:ro
+      - ./github-private-key.pem:/app/secrets/github-private-key.pem:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]

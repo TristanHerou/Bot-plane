@@ -283,10 +283,37 @@ class PlaneService:
         return self._states_by_name.get(name) if self._states_by_name else None
 
     async def get_state_by_id(self, state_id: str) -> PlaneState | None:
-        """Get a state by its ID."""
+        """Get a state by its ID (from cache)."""
         if self._states_cache is None:
             await self.get_project_states()
         return self._states_cache.get(state_id) if self._states_cache else None
+
+    async def get_state_by_id_fetch(self, state_id: str) -> PlaneState | None:
+        """
+        Fetch a state by ID from the API (when not in cache).
+
+        Used when sync receives a Plane webhook and states were not loaded at startup.
+        """
+        endpoint = (
+            f"/api/v1/workspaces/{self.workspace_slug}"
+            f"/projects/{self.project_id}/states/{state_id}/"
+        )
+        try:
+            data = await self._make_request("GET", endpoint)
+        except PlaneAPIError:
+            return None
+        if not isinstance(data, dict) or not data or "id" not in data:
+            return None
+        try:
+            state = PlaneState(**data)
+            # Optionally update cache for next time
+            if self._states_cache is not None:
+                self._states_cache[state.id] = state
+                if self._states_by_name is not None:
+                    self._states_by_name[state.name] = state
+            return state
+        except Exception:
+            return None
 
     async def get_state_id_for_name(self, name: str) -> str | None:
         """Get the state ID for a given state name."""

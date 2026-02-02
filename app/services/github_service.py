@@ -57,7 +57,7 @@ class GitHubService:
         payload = {
             "iat": now - 60,  # Issued 60 seconds ago to account for clock drift
             "exp": now + self.JWT_EXPIRATION_SECONDS,
-            "iss": self.settings.github_app_id,
+            "iss": str(self.settings.github_app_id),  # GitHub expects issuer as string
         }
         return jwt.encode(payload, self.private_key, algorithm="RS256")
 

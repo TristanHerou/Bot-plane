@@ -269,9 +269,14 @@ class SyncService:
                 message="Duplicate sync prevented",
             )
 
-        # Get the state name
-        state = await self.plane.get_state_by_id(new_state_id)
-        if not state:
+        # Get the state name (from webhook payload, cache, or fetch by ID)
+        state_name: str | None = None
+        if event.data.state_detail and event.data.state_detail.name:
+            state_name = event.data.state_detail.name
+        if not state_name:
+            state = await self.plane.get_state_by_id(new_state_id) or await self.plane.get_state_by_id_fetch(new_state_id)
+            state_name = state.name if state else None
+        if not state_name:
             return SyncOutcome(
                 result=SyncResult.NO_MAPPING,
                 direction=direction,
@@ -279,12 +284,12 @@ class SyncService:
             )
 
         # Determine the target GitHub state
-        github_state = self.mapping.get_github_state_for_plane_status(state.name)
+        github_state = self.mapping.get_github_state_for_plane_status(state_name)
         if not github_state:
             return SyncOutcome(
                 result=SyncResult.NO_MAPPING,
                 direction=direction,
-                message=f"No GitHub state mapping for Plane status '{state.name}'",
+                message=f"No GitHub state mapping for Plane status '{state_name}'",
             )
 
         # Get linked GitHub issues
@@ -345,7 +350,7 @@ class SyncService:
                         ref.owner,
                         ref.repo,
                         ref.issue_number,
-                        f"**Plane-GitHub Sync Bot:** Synced from Plane — status set to *{state.name}* → issue {github_state}.",
+                        f"**Plane-GitHub Sync Bot:** Synced from Plane — status set to *{state_name}* → issue {github_state}.",
                     )
                 except Exception as e:
                     logger.warning("Failed to add GitHub comment: %s", e)
@@ -357,7 +362,7 @@ class SyncService:
 
                 updated_issues.append(f"{ref.full_name}#{ref.issue_number}")
                 logger.info(
-                    f"Synced Plane work item {work_item_id} ({state.name}) "
+                    f"Synced Plane work item {work_item_id} ({state_name}) "
                     f"-> GitHub {ref.full_name}#{ref.issue_number} ({github_state})"
                 )
 
@@ -383,7 +388,7 @@ class SyncService:
                 message=f"Updated {len(updated_issues)} GitHub issue(s)",
                 details={
                     "work_item_id": work_item_id,
-                    "plane_state": state.name,
+                    "plane_state": state_name,
                     "github_state": github_state,
                     "updated_issues": updated_issues,
                     "errors": errors if errors else None,

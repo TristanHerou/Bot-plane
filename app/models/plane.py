@@ -111,6 +111,9 @@ class PlaneWebhookData(BaseModel):
     # Old values for comparison (available on updates)
     old_state: str | None = None
 
+    # State detail (Plane may send state name in webhook)
+    state_detail: PlaneState | None = None
+
     # Additional fields that might be present
     sequence_id: int | None = None
     priority: str | None = None

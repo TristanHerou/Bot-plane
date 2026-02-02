@@ -193,6 +193,24 @@ class SyncService:
                 f"-> Plane work item {work_item.id} ({plane_status_name})"
             )
 
+            # Notify: comment on GitHub issue and on Plane work item
+            try:
+                await self.github.create_issue_comment(
+                    repo.owner_name,
+                    repo.name,
+                    issue.number,
+                    f"**Plane-GitHub Sync Bot:** Synced to Plane — work item set to *{plane_status_name}*.",
+                )
+            except Exception as e:
+                logger.warning("Failed to add GitHub comment: %s", e)
+            try:
+                await self.plane.add_work_item_comment(
+                    work_item.id,
+                    f"Synced from GitHub: issue #{issue.number} {event.action} → state set to {plane_status_name}.",
+                )
+            except Exception as e:
+                logger.warning("Failed to add Plane comment: %s", e)
+
             return SyncOutcome(
                 result=SyncResult.SUCCESS,
                 direction=direction,
@@ -321,6 +339,17 @@ class SyncService:
                     ref.owner, ref.repo, ref.issue_number, SYNC_LABEL
                 )
 
+                # Notify: comment on GitHub issue
+                try:
+                    await self.github.create_issue_comment(
+                        ref.owner,
+                        ref.repo,
+                        ref.issue_number,
+                        f"**Plane-GitHub Sync Bot:** Synced from Plane — status set to *{state.name}* → issue {github_state}.",
+                    )
+                except Exception as e:
+                    logger.warning("Failed to add GitHub comment: %s", e)
+
                 # Record this sync
                 self._recent_syncs[
                     f"gh:{ref.full_name}#{ref.issue_number}:{github_state}"
@@ -338,6 +367,16 @@ class SyncService:
                 logger.error(f"Failed to update GitHub issue: {error_msg}")
 
         if updated_issues:
+            # Notify: comment on Plane work item (activity)
+            try:
+                issues_list = ", ".join(updated_issues)
+                await self.plane.add_work_item_comment(
+                    work_item_id,
+                    f"Synced to GitHub: issue(s) {issues_list} set to {github_state}.",
+                )
+            except Exception as e:
+                logger.warning("Failed to add Plane comment: %s", e)
+
             return SyncOutcome(
                 result=SyncResult.SUCCESS,
                 direction=direction,

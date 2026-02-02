@@ -200,6 +200,29 @@ class PlaneService:
             )
             return None
 
+    async def add_work_item_comment(
+        self, work_item_id: str, comment_html: str
+    ) -> None:
+        """
+        Add a comment on a Plane work item (appears in activity).
+
+        Used to notify users when the bot syncs from GitHub.
+        """
+        endpoint = (
+            f"/api/v1/workspaces/{self.workspace_slug}"
+            f"/projects/{self.project_id}"
+            f"/work-items/{work_item_id}/comments/"
+        )
+        body = {"comment_html": f"<p>{comment_html}</p>", "access": "EXTERNAL"}
+        try:
+            await self._make_request("POST", endpoint, json_data=body)
+        except PlaneAPIError as e:
+            logger.warning(
+                "Failed to add comment on Plane work item %s: %s",
+                work_item_id,
+                e,
+            )
+
     async def get_project_states(self) -> list[PlaneState]:
         """
         Get all states for the configured project.

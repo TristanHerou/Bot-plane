@@ -224,6 +224,43 @@ class GitHubService:
             )
             return response.json()
 
+    async def create_issue_comment(
+        self,
+        owner: str,
+        repo: str,
+        issue_number: int,
+        body: str,
+        installation_id: int | None = None,
+    ) -> None:
+        """
+        Create a comment on a GitHub issue.
+
+        Used to notify users when the bot syncs from Plane.
+        """
+        async with httpx.AsyncClient() as client:
+            if installation_id is None:
+                installation_id = await self._get_installation_id_for_repo(
+                    owner, repo, client
+                )
+
+            token = await self._get_installation_token(installation_id, client)
+
+            response = await client.post(
+                f"{self.GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{issue_number}/comments",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                json={"body": body},
+            )
+
+            if response.status_code not in (200, 201):
+                logger.warning(
+                    f"Failed to add comment to {owner}/{repo}#{issue_number}: "
+                    f"{response.status_code} - {response.text}"
+                )
+
     async def add_label(
         self,
         owner: str,

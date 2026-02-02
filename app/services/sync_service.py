@@ -160,6 +160,14 @@ class SyncService:
                 message=f"No Plane work item linked to {repo.full_name}#{issue.number}",
             )
 
+        logger.info(
+            "✅ Linked Plane work item %s for %s#%s -> updating to state '%s'",
+            work_item.id,
+            repo.full_name,
+            issue.number,
+            plane_status_name,
+        )
+
         # Check if state already matches
         if work_item.state == state_id:
             logger.info(

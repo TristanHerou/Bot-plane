@@ -78,6 +78,7 @@ class PlaneService:
         method: str,
         endpoint: str,
         json_data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
     ) -> dict[str, Any] | list[Any]:
         """Make an authenticated request to the Plane API."""
         await self._check_rate_limit()
@@ -90,6 +91,7 @@ class PlaneService:
                 url,
                 headers=self._get_headers(),
                 json=json_data,
+                params=params,
                 timeout=30.0,
             )
 
@@ -148,7 +150,7 @@ class PlaneService:
         This is used to find GitHub issues linked to Plane work items.
         """
         data = await self._make_request(
-            "GET", self._work_item_endpoint(work_item_id, "links")
+            "GET", self._work_item_endpoint(work_item_id, "links/")
         )
         if isinstance(data, list):
             return [PlaneLink(**link) for link in data]
@@ -256,42 +258,65 @@ class PlaneService:
         """
         Find a Plane work item that links to a specific GitHub issue.
 
-        This performs a search through work items. For better performance,
-        consider implementing a cache or using Plane's search API if available.
-
-        Note: This is a potentially expensive operation as it may need to
-        iterate through many work items. In production, consider maintaining
-        a mapping database.
+        Matches links by owner/repo/issue_number (insensitive to URL format).
+        Paginates through work items (Plane API: work-items/ with limit/offset).
         """
-        github_url = f"https://github.com/{owner}/{repo}/issues/{issue_number}"
-
-        # List work items and check their links
-        # Note: This is a simplified implementation. In production,
-        # you might want to use Plane's search functionality or maintain
-        # your own mapping database.
         endpoint = (
             f"/api/v1/workspaces/{self.workspace_slug}"
-            f"/projects/{self.project_id}/work-items"
+            f"/projects/{self.project_id}/work-items/"
         )
-
-        data = await self._make_request("GET", endpoint)
+        limit = 100
+        offset = 0
         work_items: list[dict[str, Any]] = []
 
-        if isinstance(data, list):
-            work_items = data
-        elif isinstance(data, dict) and "results" in data:
-            work_items = data["results"]
+        while True:
+            data = await self._make_request(
+                "GET", endpoint, params={"limit": limit, "offset": offset}
+            )
+            page: list[dict[str, Any]] = []
+            if isinstance(data, list):
+                page = data
+            elif isinstance(data, dict) and "results" in data:
+                page = data["results"]
+            elif isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
+                page = data["data"]
+            work_items.extend(page)
+            if len(page) < limit:
+                break
+            offset += limit
+
+        logger.info(
+            "Searching %d work items for GitHub link %s/%s#%s",
+            len(work_items),
+            owner,
+            repo,
+            issue_number,
+        )
 
         for item_data in work_items:
             work_item_id = item_data.get("id")
             if not work_item_id:
                 continue
-
             try:
                 links = await self.get_work_item_links(work_item_id)
                 for link in links:
-                    if link.url == github_url or link.url == github_url.rstrip("/"):
-                        return PlaneWorkItem(**item_data)
+                    ref = link.github_issue_ref
+                    if ref is None:
+                        continue
+                    if (
+                        ref.owner.lower() == owner.lower()
+                        and ref.repo.lower() == repo.lower()
+                        and ref.issue_number == issue_number
+                    ):
+                        work_item = PlaneWorkItem(**item_data)
+                        logger.info(
+                            "Found Plane work item %s linked to %s/%s#%s",
+                            work_item.id,
+                            owner,
+                            repo,
+                            issue_number,
+                        )
+                        return work_item
             except PlaneAPIError:
                 continue
 

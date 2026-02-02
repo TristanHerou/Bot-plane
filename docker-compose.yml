@@ -43,7 +43,7 @@ services:
       # Bot Configuration
       - PORT=8000
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - DEBUG=${DEBUG:-false}
+      - DEBUG=${DEBUG:-0}
 
       # Status Mapping
       - STATUS_MAPPING_FILE=/app/config/status-mapping.yml

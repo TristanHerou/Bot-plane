@@ -1,5 +1,10 @@
 # Docker Compose for Plane-GitHub Sync Bot
 # Development and production configurations
+#
+# Traefik: le bot rejoint le réseau Traefik du registry (registry_traefik).
+# Sans modifier registry/docker-compose.yml : lancer d'abord le registry pour
+# créer le réseau, puis ce compose. Si le projet registry a un autre nom,
+# adapter le nom du réseau externe ci-dessous.
 
 services:
   bot:
@@ -8,6 +13,17 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${PORT:-8000}:8000"
+    networks:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      # Router HTTPS pour le bot (domaine : DOMAIN_BOT dans .env)
+      - "traefik.http.routers.bot.rule=Host(`${DOMAIN_BOT}`)"
+      - "traefik.http.routers.bot.entrypoints=websecure"
+      - "traefik.http.routers.bot.tls=true"
+      - "traefik.http.routers.bot.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.bot.service=bot"
+      - "traefik.http.services.bot.loadbalancer.server.port=8000"
     environment:
       # Plane Configuration
       - PLANE_API_KEY=${PLANE_API_KEY}
@@ -67,3 +83,11 @@ services:
     command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     profiles:
       - dev
+
+# Réseau Traefik du registry (créé par registry/docker-compose.yml).
+# Nom = {projet_registry}_traefik ; si vous lancez le registry avec un autre
+# nom de projet, changez le nom ci-dessous (ex. monregistry_traefik).
+networks:
+  traefik:
+    external: true
+    name: registry_traefik

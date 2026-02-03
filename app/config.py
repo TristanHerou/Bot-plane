@@ -72,10 +72,15 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    bot_name: str = Field(default="Plane-GitHub Sync Bot", description="Bot name")
+
     # Plane Configuration
     plane_api_key: str = Field(..., description="Plane API key (format: plane_api_xxxxx)")
     plane_workspace_slug: str = Field(..., description="Plane workspace slug")
-    plane_project_id: str = Field(..., description="Plane project UUID")
+    plane_project_id: str | None = Field(
+        default=None,
+        description="Plane project UUID. If not set, the bot uses all projects in the workspace.",
+    )
     plane_base_url: str = Field(
         default="https://api.plane.so", description="Plane API base URL"
     )

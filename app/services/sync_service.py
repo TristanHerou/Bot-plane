@@ -58,10 +58,12 @@ class SyncService:
         github_service: GitHubService,
         plane_service: PlaneService,
         status_mapping: StatusMapping,
+        bot_name: str = "Plane-GitHub Sync Bot",
     ) -> None:
         self.github = github_service
         self.plane = plane_service
         self.mapping = status_mapping
+        self.bot_name = bot_name
 
         # Track recent syncs to prevent loops
         # Key: "{work_item_id}:{state_id}" or "{owner}/{repo}#{issue_number}:{state}"
@@ -132,20 +134,7 @@ class SyncService:
                 message=f"No Plane status mapping for GitHub action '{event.action}'",
             )
 
-        # Get the Plane state ID
-        state_id = await self.plane.get_state_id_for_name(plane_status_name)
-        if not state_id:
-            # Try from pre-configured mapping
-            state_id = self.mapping.get_plane_state_id(plane_status_name)
-
-        if not state_id:
-            return SyncOutcome(
-                result=SyncResult.NO_MAPPING,
-                direction=direction,
-                message=f"Plane state ID not found for status '{plane_status_name}'",
-            )
-
-        # Find the linked Plane work item
+        # Find the linked Plane work item first (needed to get project for state lookup)
         work_item = await self.plane.find_work_item_by_github_issue(
             repo.owner_name, repo.name, issue.number
         )
@@ -160,18 +149,30 @@ class SyncService:
                 message=f"No Plane work item linked to {repo.full_name}#{issue.number}",
             )
 
+        # Get the Plane state ID for this project
+        project_id = work_item.project
+        state_id = await self.plane.get_state_id_for_name(
+            plane_status_name, project_id=project_id
+        )
+        if not state_id:
+            # Try from pre-configured mapping
+            state_id = self.mapping.get_plane_state_id(plane_status_name)
+
+        if not state_id:
+            return SyncOutcome(
+                result=SyncResult.NO_MAPPING,
+                direction=direction,
+                message=f"Plane state ID not found for status '{plane_status_name}'",
+            )
+
         logger.info(
-            "✅ Linked Plane work item %s for %s#%s -> updating to state '%s'",
-            work_item.id,
-            repo.full_name,
-            issue.number,
-            plane_status_name,
+            f"✅ Linked Plane work item {work_item.id} project {project_id} for {repo.full_name}#{issue.number} -> updating to state '{plane_status_name}'",
         )
 
         # Check if state already matches
         if work_item.state == state_id:
             logger.info(
-                f"Plane work item {work_item.id} already has state '{plane_status_name}'"
+                f"Plane work item {work_item.id} project {project_id} already has state '{plane_status_name}'"
             )
             return SyncOutcome(
                 result=SyncResult.SKIPPED,
@@ -181,7 +182,9 @@ class SyncService:
 
         # Update the Plane work item
         try:
-            await self.plane.update_work_item_state(work_item.id, state_id)
+            await self.plane.update_work_item_state(
+                work_item.id, state_id, project_id
+            )
 
             # Record this sync to prevent loops
             self._recent_syncs[f"plane:{work_item.id}:{state_id}"] = __import__(
@@ -199,17 +202,18 @@ class SyncService:
                     repo.owner_name,
                     repo.name,
                     issue.number,
-                    f"**Plane-GitHub Sync Bot:** Synced to Plane — work item set to *{plane_status_name}*.",
+                    f"**{self.bot_name}:** Synced to Plane — work item set to *{plane_status_name}*.",
                 )
             except Exception as e:
-                logger.warning("Failed to add GitHub comment: %s", e)
+                logger.warning(f"Failed to add GitHub comment: {e}")
             try:
                 await self.plane.add_work_item_comment(
                     work_item.id,
                     f"Synced from GitHub: issue #{issue.number} {event.action} → state set to {plane_status_name}.",
+                    project_id,
                 )
             except Exception as e:
-                logger.warning("Failed to add Plane comment: %s", e)
+                logger.warning(f"Failed to add Plane comment: {e}")
 
             return SyncOutcome(
                 result=SyncResult.SUCCESS,
@@ -240,8 +244,16 @@ class SyncService:
         """
         direction = SyncDirection.PLANE_TO_GITHUB
         work_item_id = event.work_item_id
+        project_id = event.project_id or (event.data.project if event.data else None)
+        if not project_id:
+            logger.error("Plane webhook missing project_id, cannot resolve work item project")
+            return SyncOutcome(
+                result=SyncResult.ERROR,
+                direction=direction,
+                message="Webhook payload missing project_id",
+            )
 
-        logger.info(f"Processing Plane event for work item {work_item_id}")
+        logger.info(f"Processing Plane event for work item {work_item_id} (project {project_id})")
 
         # Check if this is a status change
         if not event.is_status_change:
@@ -262,7 +274,7 @@ class SyncService:
         # Check for duplicate sync (loop prevention)
         sync_key = f"plane:{work_item_id}:{new_state_id}"
         if self._is_duplicate_sync(sync_key):
-            logger.info(f"Skipping duplicate sync for work item {work_item_id}")
+            logger.info(f"∅ Skipping duplicate sync for work item {work_item_id}")
             return SyncOutcome(
                 result=SyncResult.LOOP_PREVENTED,
                 direction=direction,
@@ -294,7 +306,7 @@ class SyncService:
 
         # Get linked GitHub issues
         try:
-            links = await self.plane.get_work_item_links(work_item_id)
+            links = await self.plane.get_work_item_links(work_item_id, project_id)
         except Exception as e:
             logger.error(f"Failed to get work item links: {e}")
             return SyncOutcome(
@@ -350,7 +362,7 @@ class SyncService:
                         ref.owner,
                         ref.repo,
                         ref.issue_number,
-                        f"**Plane-GitHub Sync Bot:** Synced from Plane — status set to *{state_name}* → issue {github_state}.",
+                        f"**{self.bot_name}:** Synced from Plane — status set to *{state_name}* → issue {github_state}.",
                     )
                 except Exception as e:
                     logger.warning("Failed to add GitHub comment: %s", e)
@@ -378,6 +390,7 @@ class SyncService:
                 await self.plane.add_work_item_comment(
                     work_item_id,
                     f"Synced to GitHub: issue(s) {issues_list} set to {github_state}.",
+                    project_id,
                 )
             except Exception as e:
                 logger.warning("Failed to add Plane comment: %s", e)

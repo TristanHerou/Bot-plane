@@ -60,16 +60,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
     setup_logging(settings)
 
-    logger.info(f"Starting Plane-GitHub Sync Bot v{__version__}")
-    logger.info(f"Workspace: {settings.plane_workspace_slug}")
-    logger.info(f"Project: {settings.plane_project_id}")
+    logger.info("%s v%s", settings.bot_name, __version__)
+    logger.info("Workspace: %s", settings.plane_workspace_slug)
+    logger.info(
+        f"Project(s): {settings.plane_project_id or 'all in workspace'}"
+    )
 
     # Initialize services
     _github_service = GitHubService(settings)
     _plane_service = PlaneService(settings)
 
     status_mapping = settings.get_status_mapping()
-    _sync_service = SyncService(_github_service, _plane_service, status_mapping)
+    _sync_service = SyncService(
+        _github_service, _plane_service, status_mapping, bot_name=settings.bot_name
+    )
 
     # Initialize sync service (loads Plane states)
     try:
@@ -82,7 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     # Cleanup
-    logger.info("Shutting down Plane-GitHub Sync Bot")
+    logger.info("Shutting down %s", settings.bot_name)
     _github_service = None
     _plane_service = None
     _sync_service = None
@@ -119,7 +123,7 @@ def create_app() -> FastAPI:
     async def root() -> dict[str, str]:
         """Root endpoint with basic info."""
         return {
-            "name": "Plane-GitHub Sync Bot",
+            "name": get_settings().bot_name,
             "version": __version__,
             "status": "running",
         }

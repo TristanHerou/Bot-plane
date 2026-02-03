@@ -98,7 +98,7 @@ docker compose --profile dev up bot-dev
 |----------|----------|-------------|
 | `PLANE_API_KEY` | Yes | Plane API key (format: `plane_api_xxxxx`) |
 | `PLANE_WORKSPACE_SLUG` | Yes | Your Plane workspace slug |
-| `PLANE_PROJECT_ID` | Yes | Plane project UUID |
+| `PLANE_PROJECT_ID` | No | Plane project UUID. If unset, the bot uses **all projects** in the workspace. |
 | `PLANE_BASE_URL` | No | Plane API base URL (default: `https://api.plane.so`) |
 | `GITHUB_APP_ID` | Yes | GitHub App ID |
 | `GITHUB_APP_PRIVATE_KEY_PATH` | Yes* | Path to GitHub App private key PEM file |

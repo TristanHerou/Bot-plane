@@ -169,6 +169,31 @@ class PlaneService:
         )
         return f"{base}/{suffix}" if suffix else base
 
+    async def get_work_item_by_identifier(
+        self, identifier: str
+    ) -> PlaneWorkItem | None:
+        """
+        Get a work item by its readable identifier (e.g. MAIN-123, BACK-54).
+
+        Uses workspace-level endpoint: GET /workspaces/{slug}/work-items/{identifier}/
+        """
+        endpoint = (
+            f"/api/v1/workspaces/{self.workspace_slug}"
+            f"/work-items/{identifier}/"
+        )
+        try:
+            data = await self._make_request("GET", endpoint)
+        except PlaneAPIError as e:
+            if e.status_code == 404:
+                return None
+            raise
+        if not isinstance(data, dict) or not data or "id" not in data:
+            return None
+        try:
+            return PlaneWorkItem(**data)
+        except Exception:
+            return None
+
     async def get_work_item(self, work_item_id: str, project_id: str) -> PlaneWorkItem:
         """Get a work item by ID (Plane API expects trailing slash)."""
         endpoint = self._work_item_endpoint(work_item_id, project_id) + "/"

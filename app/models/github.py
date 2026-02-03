@@ -1,5 +1,6 @@
 """Pydantic models for GitHub webhook payloads."""
 
+import re
 from datetime import datetime
 from typing import Literal
 
@@ -122,3 +123,41 @@ class GitHubIssueEvent(BaseModel):
 # Constants for bot identification
 SYNC_LABEL = "plane-sync"
 SYNC_MARKER = "[plane-sync]"
+
+# Regex to match Plane work item references in commit messages: [MAIN-123], [BACK-54], etc.
+COMMIT_REF_PATTERN = re.compile(r"\[([A-Za-z0-9]+)-(\d+)\]")
+
+
+class GitHubCommitAuthor(BaseModel):
+    """Commit author in push payload."""
+
+    name: str | None = None
+    email: str | None = None
+    username: str | None = None
+
+
+class GitHubPushCommit(BaseModel):
+    """Single commit in a push event."""
+
+    id: str
+    message: str | None = None
+    timestamp: str | None = None
+    author: GitHubCommitAuthor | None = None
+    url: str | None = None
+
+
+class GitHubPushEvent(BaseModel):
+    """GitHub push webhook event payload."""
+
+    ref: str  # e.g. refs/heads/main
+    repository: GitHubRepository
+    commits: list[GitHubPushCommit] = Field(default_factory=list)
+    head_commit: GitHubPushCommit | None = None
+    installation: GitHubInstallation | None = None
+
+    @property
+    def branch(self) -> str | None:
+        """Branch name if ref is a branch."""
+        if self.ref.startswith("refs/heads/"):
+            return self.ref.removeprefix("refs/heads/")
+        return None

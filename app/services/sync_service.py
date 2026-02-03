@@ -1,12 +1,19 @@
 """Synchronization service for bidirectional GitHub-Plane sync."""
 
+import html
 import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
 from app.config import StatusMapping
-from app.models.github import SYNC_LABEL, GitHubIssueEvent
+from app.models.github import (
+    COMMIT_REF_PATTERN,
+    SYNC_LABEL,
+    GitHubIssueEvent,
+    GitHubPushCommit,
+    GitHubPushEvent,
+)
 from app.models.plane import GitHubIssueRef, PlaneWebhookEvent
 from app.services.github_service import GitHubService
 from app.services.plane_service import PlaneService
@@ -419,6 +426,92 @@ class SyncService:
                 direction=direction,
                 message="All linked issues already have the correct state",
             )
+
+    def _extract_work_item_refs_from_message(self, message: str) -> set[str]:
+        """Extract Plane work item identifiers from a commit message (e.g. [MAIN-123] -> MAIN-123)."""
+        refs: set[str] = set()
+        for match in COMMIT_REF_PATTERN.finditer(message):
+            key, num = match.group(1), match.group(2)
+            refs.add(f"{key}-{num}")
+        return refs
+
+    @staticmethod
+    def _format_commit_comment(
+        commit: GitHubPushCommit,
+        repo_full_name: str,
+        branch: str | None,
+        commit_url: str | None,
+    ) -> str:
+        """Format commit info as safe HTML for a Plane comment."""
+        msg = (commit.message or "").strip().splitlines()
+        first_line = msg[0] if msg else ""
+        author = ""
+        if commit.author:
+            author = commit.author.name or commit.author.username or ""
+        parts = [f"<strong>Commit:</strong> {html.escape(first_line)}"]
+        if author:
+            parts.append(f"<strong>Author:</strong> {html.escape(author)}")
+        if branch:
+            parts.append(f"<strong>Branch:</strong> {html.escape(branch)}")
+        if repo_full_name:
+            parts.append(f"<strong>Repo:</strong> {html.escape(repo_full_name)}")
+        if commit_url:
+            parts.append(f'<a href="{html.escape(commit_url)}">View commit</a>')
+        return " · ".join(parts)
+
+    async def sync_commits_to_plane_work_items(
+        self, event: GitHubPushEvent
+    ) -> dict[str, Any]:
+        """
+        On push, parse commit messages for [PROJECT-123] refs and add the commit
+        message as a comment on the corresponding Plane work items.
+        """
+        repo = event.repository
+        repo_full_name = repo.full_name
+        branch = event.branch
+        commits: list[GitHubPushCommit] = list(event.commits) if event.commits else []
+        if not commits and event.head_commit:
+            commits = [event.head_commit]
+
+        commented: list[str] = []
+        skipped: list[str] = []
+        errors: list[str] = []
+
+        for commit in commits:
+            refs = self._extract_work_item_refs_from_message(commit.message or "")
+            if not refs:
+                continue
+            comment_body = self._format_commit_comment(
+                commit, repo_full_name, branch, commit.url
+            )
+            for identifier in refs:
+                try:
+                    work_item = await self.plane.get_work_item_by_identifier(
+                        identifier
+                    )
+                    if not work_item:
+                        skipped.append(identifier)
+                        logger.debug(
+                            "No Plane work item found for identifier %s", identifier
+                        )
+                        continue
+                    await self.plane.add_work_item_comment(
+                        work_item.id,
+                        comment_body,
+                        work_item.project,
+                    )
+                    commented.append(f"{identifier} (commit {commit.id[:7]})")
+                    first_line = ((commit.message or "").strip().splitlines() or [""])[0][:50]
+                    logger.info("Added commit comment to %s: %s", identifier, first_line)
+                except Exception as e:
+                    errors.append(f"{identifier}: {e}")
+                    logger.warning("Failed to add comment to %s: %s", identifier, e)
+
+        return {
+            "commented": commented,
+            "skipped": skipped,
+            "errors": errors,
+        }
 
     async def initialize(self) -> None:
         """

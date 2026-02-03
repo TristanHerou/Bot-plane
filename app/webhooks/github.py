@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
-from app.models.github import GitHubIssueEvent
+from app.models.github import GitHubIssueEvent, GitHubPushEvent
 from app.services.github_service import GitHubService
 from app.services.sync_service import SyncOutcome, SyncResult, SyncService
 
@@ -72,7 +72,41 @@ async def github_webhook(
             detail="Invalid webhook signature",
         )
 
-    # Only process issue events
+    import json
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as e:
+        logger.error("Invalid JSON in webhook body: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON payload",
+        ) from e
+
+    # Handle push events: commit messages [MAIN-123] -> comment on Plane work items
+    if x_github_event == "push":
+        try:
+            event = GitHubPushEvent(**payload)
+        except Exception as e:
+            logger.error(f"Failed to parse push payload: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid payload: {e}",
+            )
+        try:
+            result = await sync_service.sync_commits_to_plane_work_items(event)
+            return {
+                "status": "processed",
+                "reason": "push",
+                "commented": result["commented"],
+                "skipped": result["skipped"],
+                "errors": result["errors"] or None,
+            }
+        except Exception as e:
+            logger.exception("Unexpected error processing push webhook: %s", e)
+            return {"status": "error", "message": str(e)}
+
+    # Handle issue events: closed/reopened -> sync status to Plane
     if x_github_event != "issues":
         logger.debug(f"Ignoring event type: {x_github_event}")
         return {
@@ -80,11 +114,7 @@ async def github_webhook(
             "reason": f"Event type '{x_github_event}' not handled",
         }
 
-    # Parse the payload (body already read for signature verification)
     try:
-        import json
-
-        payload = json.loads(body)
         event = GitHubIssueEvent(**payload)
     except Exception as e:
         logger.error(f"Failed to parse webhook payload: {e}")
